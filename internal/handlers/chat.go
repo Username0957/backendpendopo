@@ -275,8 +275,8 @@ func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send chat history (last 400 messages) to the new client synchronously before starting pumps
-	history, err := getRecentMessages(400)
+	// Send chat history (last 40 messages) to the new client synchronously before starting pumps
+	history, err := getRecentMessages(40)
 	if err != nil {
 		log.Printf("Error loading history: %v", err)
 	} else {
@@ -327,17 +327,29 @@ func CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate optional occupation (max 100 chars)
+	if len(req.Occupation) > 100 {
+		http.Error(w, "Occupation must be under 100 characters", http.StatusBadRequest)
+		return
+	}
+	// Validate optional purpose (max 200 chars)
+	if len(req.Purpose) > 200 {
+		http.Error(w, "Purpose must be under 200 characters", http.StatusBadRequest)
+		return
+	}
+
 	// Generate unique session token
 	sessionToken := uuid.New().String()
 
 	// Insert session into database
 	var session models.Session
 	err := database.DB.QueryRow(`
-		INSERT INTO sessions (nickname, table_number, session_token)
-		VALUES ($1, $2, $3)
-		RETURNING id, nickname, table_number, session_token, is_active, created_at, expires_at
-	`, req.Nickname, req.TableNumber, sessionToken).Scan(
+		INSERT INTO sessions (nickname, table_number, occupation, purpose, session_token)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, nickname, table_number, occupation, purpose, session_token, is_active, created_at, expires_at
+	`, req.Nickname, req.TableNumber, req.Occupation, req.Purpose, sessionToken).Scan(
 		&session.ID, &session.Nickname, &session.TableNumber,
+		&session.Occupation, &session.Purpose,
 		&session.SessionToken, &session.IsActive, &session.CreatedAt, &session.ExpiresAt,
 	)
 	if err != nil {
@@ -346,7 +358,7 @@ func CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("✅ New session: %s (Meja %d)", session.Nickname, session.TableNumber)
+	log.Printf("✅ New session: %s (Meja %d) — %s", session.Nickname, session.TableNumber, session.Occupation)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.SessionResponse{
@@ -375,7 +387,7 @@ func ValidateSession(w http.ResponseWriter, r *http.Request) {
 
 // GetMessages handles GET /api/messages — returns recent chat history.
 func GetMessages(w http.ResponseWriter, r *http.Request) {
-	messages, err := getRecentMessages(400)
+	messages, err := getRecentMessages(40)
 	if err != nil {
 		log.Printf("Error fetching messages: %v", err)
 		http.Error(w, "Failed to fetch messages", http.StatusInternalServerError)
@@ -402,11 +414,12 @@ func GetOnlineCount(hub *Hub, w http.ResponseWriter, r *http.Request) {
 func getSessionByToken(token string) (*models.Session, error) {
 	var session models.Session
 	err := database.DB.QueryRow(`
-		SELECT id, nickname, table_number, session_token, is_active, created_at, expires_at
+		SELECT id, nickname, table_number, occupation, purpose, session_token, is_active, created_at, expires_at
 		FROM sessions
 		WHERE session_token = $1 AND is_active = TRUE AND expires_at > NOW()
 	`, token).Scan(
 		&session.ID, &session.Nickname, &session.TableNumber,
+		&session.Occupation, &session.Purpose,
 		&session.SessionToken, &session.IsActive, &session.CreatedAt, &session.ExpiresAt,
 	)
 	if err != nil {

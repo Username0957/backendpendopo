@@ -8,6 +8,8 @@ type Session struct {
 	ID           string    `json:"id"`
 	Nickname     string    `json:"nickname"`
 	TableNumber  int       `json:"table_number"`
+	Occupation   string    `json:"occupation"`
+	Purpose      string    `json:"purpose"`
 	SessionToken string    `json:"session_token"`
 	IsActive     bool      `json:"is_active"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -47,6 +49,8 @@ type WSMessage struct {
 type SessionRequest struct {
 	Nickname    string `json:"nickname"`
 	TableNumber int    `json:"table_number"`
+	Occupation  string `json:"occupation"`
+	Purpose     string `json:"purpose"`
 }
 
 // SessionResponse is returned after successfully creating a session.

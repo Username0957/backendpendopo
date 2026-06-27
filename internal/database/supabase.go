@@ -43,11 +43,19 @@ func InitSchema() error {
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		nickname VARCHAR(50) NOT NULL,
 		table_number INT NOT NULL,
+		occupation VARCHAR(100) DEFAULT '',
+		purpose TEXT DEFAULT '',
 		session_token VARCHAR(255) UNIQUE NOT NULL,
 		is_active BOOLEAN DEFAULT TRUE,
 		created_at TIMESTAMPTZ DEFAULT NOW(),
 		expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '15 hours')
 	);
+
+	-- Add new columns for existing tables (safe to run multiple times)
+	DO $$ BEGIN
+		ALTER TABLE sessions ADD COLUMN IF NOT EXISTS occupation VARCHAR(100) DEFAULT '';
+		ALTER TABLE sessions ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT '';
+	END $$;
 
 	CREATE TABLE IF NOT EXISTS messages (
 		id BIGSERIAL PRIMARY KEY,

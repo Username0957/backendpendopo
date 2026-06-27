@@ -30,13 +30,23 @@ const (
 // It includes the café menu and instructions to always respond in Indonesian.
 var systemPrompt = `Kamu adalah "Pendopo AI Buddy", asisten virtual cerdas milik Kafe Pendopo.
 Kamu ramah, santai, dan berbicara dengan gaya anak muda yang sopan.
-SELALU jawab dalam Bahasa Indonesia.
+SELALU jawab dalam Bahasa Indonesia. JANGAN gunakan markdown berlebihan.
 
-Tugasmu:
+ATURAN PENTING:
+- Jawab SINGKAT, PADAT, dan JELAS. Maksimal 3-4 paragraf pendek.
+- JANGAN berpikir terlalu panjang atau bertele-tele.
+- Kamu BOLEH menjawab pertanyaan umum di luar topik kafe (misalnya tentang bisnis, teknologi, ide, motivasi, dll).
+- TETAPI kamu TIDAK BOLEH menjawab pertanyaan yang bersifat: konten dewasa/NSFW, kekerasan, ujaran kebencian, politik sensitif, atau hal ilegal.
+- Jika ditanya hal terlarang, tolak dengan sopan dan arahkan ke topik lain.
+- Default persona-mu tetap sebagai asisten kafe yang ramah. Selalu selipkan referensi ke kafe jika relevan.
+
+TUGASMU:
 1. Membantu pengunjung memilih menu makanan dan minuman
 2. Memberikan rekomendasi berdasarkan preferensi pengunjung
 3. Menjawab pertanyaan seputar kafe (jam buka, lokasi, fasilitas)
 4. Memberikan informasi promo yang sedang berlaku
+5. Menjawab pertanyaan umum dengan ramah dan ringkas
+6. Jika pengunjung memiliki tujuan khusus (networking, ide bisnis, dll), bantu dengan tips singkat
 
 MENU KAFE PENDOPO:
 
@@ -83,7 +93,6 @@ MENU KAFE PENDOPO:
 - Happy Hour: Semua minuman diskon 20% (14:00-16:00)
 - Paket Hemat: Nasi Goreng + Es Teh = Rp 40.000
 
-Jika pengunjung bertanya di luar topik kafe/makanan/minuman, arahkan dengan sopan kembali ke topik yang relevan.
 Jawab dengan singkat, jelas, dan menarik. Gunakan emoji sesekali untuk kesan ramah.`
 
 // ============================================================================
@@ -189,8 +198,17 @@ func HandleAIChat(aiCfg *AIConfig, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Call Gemini API
-	reply, err := callGeminiAPI(aiCfg, history, req.Message)
+	// Build user profile context for personalized AI responses
+	profileContext := fmt.Sprintf("Pengunjung ini bernama %s, duduk di Meja %d.", session.Nickname, session.TableNumber)
+	if session.Occupation != "" {
+		profileContext += fmt.Sprintf(" Pekerjaan: %s.", session.Occupation)
+	}
+	if session.Purpose != "" {
+		profileContext += fmt.Sprintf(" Tujuan ke kafe: %s.", session.Purpose)
+	}
+
+	// Call Gemini API with user profile context
+	reply, err := callGeminiAPI(aiCfg, history, req.Message, profileContext)
 	if err != nil {
 		log.Printf("Error calling Gemini API: %v", err)
 		http.Error(w, "AI service temporarily unavailable", http.StatusServiceUnavailable)
@@ -280,8 +298,8 @@ func HandleAIHistory(w http.ResponseWriter, r *http.Request) {
 // Gemini API Call
 // ============================================================================
 
-// callGeminiAPI sends a message to the Gemini API with conversation history.
-func callGeminiAPI(cfg *AIConfig, history []models.AIChat, userMessage string) (string, error) {
+// callGeminiAPI sends a message to the Gemini API with conversation history and user profile context.
+func callGeminiAPI(cfg *AIConfig, history []models.AIChat, userMessage string, profileContext string) (string, error) {
 	// Build conversation contents from history
 	var contents []geminiContent
 	for _, chat := range history {
@@ -301,11 +319,17 @@ func callGeminiAPI(cfg *AIConfig, history []models.AIChat, userMessage string) (
 		Parts: []geminiPart{{Text: userMessage}},
 	})
 
+	// Build system instruction with profile context
+	fullSystemPrompt := systemPrompt
+	if profileContext != "" {
+		fullSystemPrompt += "\n\nINFO PENGUNJUNG SAAT INI:\n" + profileContext
+	}
+
 	// Build request with system instruction
 	reqBody := geminiRequest{
 		Contents: contents,
 		SystemInstruct: &geminiSystemInstruct{
-			Parts: []geminiPart{{Text: systemPrompt}},
+			Parts: []geminiPart{{Text: fullSystemPrompt}},
 		},
 	}
 
